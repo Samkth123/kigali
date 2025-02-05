@@ -1,0 +1,72 @@
+import torch
+from transformers import AutoTokenizer, AutoModel
+from sklearn.cluster import KMeans
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+#Load CodeBERT model and tokenizer
+MODEL_NAME = "microsoft/codebert-base"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModel.from_pretrained(MODEL_NAME)
+
+#This is the function to generate embeddings for the given list of code snippets
+def get_code_embeddings(code_snippets):
+    embeddings = []
+    for code in code_snippets:
+        inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        # Use the [CLS] token representation as the code embedding
+        cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
+        embeddings.append(cls_embedding)
+    return np.array(embeddings)
+
+#test dataset - (Different solutions to the same problem)
+data = {
+    "country": ["Country A", "Country A", "Country B", "Country B", "Country A", "Country B"],
+    "code": [
+        "def contains_duplicate(nums):\n    seen = set()\n    for num in nums:\n        if num in seen:\n            return True\n        seen.add(num)\n    return False",
+        "def contains_duplicate(nums):\n    return len(nums) != len(set(nums))",
+        "def contains_duplicate(nums):\n    nums.sort()\n    for i in range(len(nums) - 1):\n        if nums[i] == nums[i + 1]:\n            return True\n    return False",
+        "from collections import Counter\ndef contains_duplicate(nums):\n    return any(count > 1 for count in Counter(nums).values())",
+        "def contains_duplicate(nums):\n    seen = {}\n    for num in nums:\n        if num in seen:\n            return True\n        seen[num] = True\n    return False",
+        "def contains_duplicate(nums):\n    return len(set(nums)) < len(nums)"
+    ]
+}
+
+df = pd.DataFrame(data)
+
+#generate embeddings
+embeddings = get_code_embeddings(df["code"].tolist())
+
+#Apply K-Means clustering
+num_clusters = 3  # Adjust based on data size
+kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+df["cluster"] = kmeans.fit_predict(embeddings)
+
+#Reduce dimensions using PCA for visualization
+pca = PCA(n_components=2)
+reduced_embeddings = pca.fit_transform(embeddings)
+
+df["pca_x"] = reduced_embeddings[:, 0]
+df["pca_y"] = reduced_embeddings[:, 1]
+
+#plot clusters
+plt.figure(figsize=(8, 6))
+colors = ['red', 'blue', 'green']
+for i in range(num_clusters):
+    cluster_data = df[df["cluster"] == i]
+    plt.scatter(cluster_data["pca_x"], cluster_data["pca_y"], color=colors[i], label=f'Cluster {i}')
+
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.title("K-Means Clustering of Code Snippets")
+plt.legend()
+plt.show()
+
+#results
+df.sort_values(by="cluster", inplace=True)
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Code Clustering Results", dataframe=df)
