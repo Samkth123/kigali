@@ -1,0 +1,106 @@
+import ast
+import re
+import torch
+from transformers import pipeline
+import matplotlib.pyplot as plt
+import pandas as pd
+from collections import Counter
+
+
+# Function to extract comments from Python code
+def extract_comments_from_python(code):
+    comments = []
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Str):
+            comments.append(node.value.s)  # Docstrings
+
+    # Extract inline comments using regex
+    inline_comments = re.findall(r'#[^\n]*', code)
+    comments.extend([c.lstrip('#').strip() for c in inline_comments])
+    return comments
+
+
+# Load a sentiment analysis pipeline (BERT-based model from Hugging Face)
+sentiment_pipeline = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
+
+
+# Function to analyze sentiment
+def analyze_sentiment(comments):
+    sentiments = []
+    for comment in comments:
+        result = sentiment_pipeline(comment)[0]
+        sentiments.append((comment, result['label'], result['score']))
+    return sentiments
+
+
+# Function to measure detail level based on word count
+def analyze_detail_level(comments):
+    detail_levels = []
+    for comment in comments:
+        word_count = len(comment.split())  # Using split() instead of NLTK
+        if word_count < 5:
+            level = "Brief"
+        elif word_count < 15:
+            level = "Moderate"
+        else:
+            level = "Descriptive"
+        detail_levels.append((comment, level, word_count))
+    return detail_levels
+
+
+# Sample Python code with comments
+sample_code = """
+# This amazing function helps process user data efficiently
+# It's super fast and optimized for performance!
+def process_user_data(users):
+    # Loop through all users and do magic
+    for i in range(len(users)):
+        # Get the current user - they're very important!
+        user = users[i]
+
+        # Process their amazing data with this super efficient code
+        # This part is crucial for performance!
+        if user.status == "active":
+            # Do some really cool stuff here
+            user.processed = True
+            user.score += 10
+
+    # Return the processed users - they're now even more amazing!
+    return users
+"""
+
+# Extract comments
+comments = extract_comments_from_python(sample_code)
+
+# Analyze sentiment
+sentiment_results = analyze_sentiment(comments)
+
+# Analyze detail level
+detail_results = analyze_detail_level(comments)
+
+# Convert results to a DataFrame for visualization
+df = pd.DataFrame(sentiment_results, columns=['Comment', 'Sentiment', 'Score'])
+df_detail = pd.DataFrame(detail_results, columns=['Comment', 'Detail Level', 'Word Count'])
+
+# Display dataframes
+print("Sentiment Analysis of Code Comments:")
+print(df)
+
+print("\nDetail Level of Code Comments:")
+print(df_detail)
+
+# Plot sentiment distribution
+plt.figure(figsize=(6, 4))
+df['Sentiment'].value_counts().plot(kind='bar')
+plt.title("Sentiment Distribution of Comments")
+plt.xlabel("Sentiment")
+plt.ylabel("Count")
+plt.show()
+
+# Plot detail level distribution
+plt.figure(figsize=(6, 4))
+df_detail['Detail Level'].value_counts().plot(kind='bar')
+plt.title("Detail Level of Comments")
+plt.xlabel("Detail Level")
+plt.ylabel("Count")
+plt.show()
